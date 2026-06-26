@@ -1,0 +1,59 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum JobStatus {
+  created
+  queued
+  preprocessing
+  rendering
+  uploading
+  completed
+  failed
+}
+
+enum AssetType {
+  photo
+  video
+}
+
+model Job {
+  id         String    @id @default(cuid())
+  templateId String    @default("baby_full_moon_v1")
+  status     JobStatus @default(created)
+  progress   Int       @default(0)
+  errorMsg   String?
+
+  babyName  String
+  eventDate String
+  blessing  String?
+  bgmPreset String  @default("warm_piano")
+
+  outputPath String?
+  outputUrl  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assets JobAsset[]
+
+  @@index([status, createdAt])
+}
+
+model JobAsset {
+  id        String    @id @default(cuid())
+  jobId     String
+  job       Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  type      AssetType
+  fileName  String
+  filePath  String
+  sortOrder Int       @default(0)
+  createdAt DateTime  @default(now())
+
+  @@index([jobId, sortOrder])
+}

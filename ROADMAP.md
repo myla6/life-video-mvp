@@ -6,7 +6,8 @@
 
 - [ ] Day 1：读开工包，访谈 1 个朋友
 - [x] Day 2：本地 ffmpeg 出第一条竖屏 mp4（时长按 4.4 随素材计算）
-- [ ] Day 3～5：Next.js 上传 + API + Worker
+- [x] Day 3：Next.js 上传 + 创建任务 API（Worker 待 Day 4）
+- [ ] Day 4～5：Worker 消费任务 + 预览下载联调
 - [ ] Day 6～7：给朋友做 1 条真实满月成片
 
 **模板**：`templates/baby_full_moon_v1.json`

@@ -55,12 +55,25 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. 前端（待初始化）
+### 4. 前端（apps/web）
 
 ```bash
-cd apps
-pnpm create next-app web --typescript --tailwind --eslint --app --src-dir=false
+# 先启动 Postgres
+docker compose up -d
+
+cd apps/web
+cp .env.example .env   # 首次；DATABASE_URL 默认连 localhost:5433
+pnpm install
+pnpm db:migrate        # 初始化表结构
+
+pnpm dev               # http://localhost:3000
 ```
+
+页面：
+
+- `/` — 首页
+- `/create/baby-moon` — 上传 + 表单 + 提交
+- `/jobs/[id]` — 任务进度（Day 4 Worker 接上后会开始合成）
 
 ## 文档
 

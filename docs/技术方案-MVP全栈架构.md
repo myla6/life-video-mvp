@@ -39,7 +39,7 @@
 | `worker/render.py` 本地 ffmpeg 成片 | ✅ 已完成（Day 2） |
 | `templates/baby_full_moon_v1.json` | ✅ 已有 |
 | `docker-compose.yml`（Postgres + Redis） | ✅ 已有 |
-| `apps/web` Next.js 全栈 | ⬜ 待建（Day 3 起） |
+| `apps/web` Next.js 全栈 | ✅ Day 3（上传 + API + 页面） |
 | Worker 消费任务 | ⬜ 待建（Day 4 起） |
 
 ---
