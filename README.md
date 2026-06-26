@@ -33,50 +33,23 @@ life-video-mvp/
 
 ## 快速开始
 
-### 1. 基础设施
+**完整步骤见 → [本地开发指南](./docs/本地开发指南.md)**（clone 后从零跑起来）
 
 ```bash
-docker compose up -d
-```
-
-### 2. 验证 ffmpeg（Day 2 必做）
-
-```bash
-brew install ffmpeg
-# 见 docs/mvp-满月短片-开工包.md 第八节
-```
-
-### 3. Worker（本地试跑）
-
-```bash
-cd worker
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-### 4. 前端（apps/web）
-
-```bash
-# 先启动 Postgres
+# 1. 启动数据库（需先打开 Docker Desktop）
 docker compose up -d
 
+# 2. Web
 cd apps/web
-cp .env.example .env   # 首次；DATABASE_URL 默认连 localhost:5433
+cp .env.example .env    # 首次
 pnpm install
-pnpm db:migrate        # 初始化表结构
-
-pnpm dev               # http://localhost:3000
+pnpm db:migrate
+pnpm dev                # http://localhost:3000
 ```
-
-页面：
-
-- `/` — 首页
-- `/create/baby-moon` — 上传 + 表单 + 提交
-- `/jobs/[id]` — 任务进度（Day 4 Worker 接上后会开始合成）
 
 ## 文档
 
+- **[本地开发指南](./docs/本地开发指南.md)** — clone 后怎么装依赖、启数据库、跑 Web
 - [MVP 开工包：满月](./docs/mvp-满月短片-开工包.md)
 - [技术方案：MVP 全栈架构](./docs/技术方案-MVP全栈架构.md)
 - [全链路方案](./docs/生活场景AI短片工具-全链路方案.md)
