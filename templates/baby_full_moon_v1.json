@@ -1,0 +1,79 @@
+{
+  "id": "baby_full_moon_v1",
+  "name": "宝宝满月纪念",
+  "version": "1.0.2",
+  "output": {
+    "width": 720,
+    "height": 1280,
+    "fps": 30,
+    "durationMode": "computed",
+    "format": "mp4",
+    "videoCodec": "h264",
+    "audioCodec": "aac"
+  },
+  "segments": [
+    {
+      "id": "intro",
+      "type": "title_card",
+      "duration": 5,
+      "style": {
+        "backgroundColor": "#FFF5F5",
+        "titleTemplate": "{babyName}",
+        "subtitleTemplate": "满月快乐",
+        "dateTemplate": "{eventDate}",
+        "fontFamily": "NotoSansSC-Medium"
+      }
+    },
+    {
+      "id": "slideshow",
+      "type": "photo_slideshow",
+      "style": {
+        "photoDuration": 2.8,
+        "transition": "fade",
+        "transitionDuration": 0.5,
+        "fit": "cover",
+        "kenBurns": false
+      },
+      "source": "photos"
+    },
+    {
+      "id": "video_clips",
+      "type": "video_clips",
+      "optional": true,
+      "style": {
+        "fit": "cover",
+        "maxClips": 2,
+        "clipMaxDuration": 5
+      },
+      "source": "videos"
+    },
+    {
+      "id": "ending",
+      "type": "ending_card",
+      "duration": 5,
+      "style": {
+        "backgroundColor": "#FFF5F5",
+        "textTemplate": "{blessing}",
+        "defaultBlessing": "健康成长，平安喜乐"
+      }
+    }
+  ],
+  "audio": {
+    "bgm": {
+      "source": "preset",
+      "presets": ["warm_piano", "soft_guitar", "lullaby"],
+      "volume": 0.8,
+      "fadeIn": 1,
+      "fadeOut": 2
+    }
+  },
+  "formFields": [
+    { "key": "babyName", "label": "宝宝昵称", "required": true, "maxLength": 20 },
+    { "key": "eventDate", "label": "满月日期", "required": true, "type": "date" },
+    { "key": "blessing", "label": "祝福语", "required": false, "maxLength": 50 }
+  ],
+  "constraints": {
+    "photos": { "min": 5, "max": 15 },
+    "videos": { "min": 0, "max": 2 }
+  }
+}

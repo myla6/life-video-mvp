@@ -1,0 +1,92 @@
+{
+  "id": "wedding_v1",
+  "name": "结婚纪念短片",
+  "version": "0.1.0",
+  "status": "draft",
+  "note": "Phase 2 实现，满月全链路跑通后再开发",
+  "output": {
+    "width": 720,
+    "height": 1280,
+    "fps": 30,
+    "duration": 75,
+    "format": "mp4",
+    "videoCodec": "h264",
+    "audioCodec": "aac"
+  },
+  "segments": [
+    {
+      "id": "intro",
+      "type": "title_card",
+      "start": 0,
+      "duration": 6,
+      "style": {
+        "backgroundColor": "#FFF8F0",
+        "titleTemplate": "{groomName} & {brideName}",
+        "subtitleTemplate": "我们结婚啦",
+        "dateTemplate": "{weddingDate}",
+        "fontFamily": "NotoSansSC-Medium"
+      }
+    },
+    {
+      "id": "slideshow",
+      "type": "photo_slideshow",
+      "start": 6,
+      "duration": 50,
+      "style": {
+        "photoDuration": 3,
+        "transition": "fade",
+        "transitionDuration": 0.6,
+        "fit": "cover",
+        "kenBurns": true
+      },
+      "source": "photos"
+    },
+    {
+      "id": "video_clips",
+      "type": "video_clips",
+      "start": 56,
+      "duration": 12,
+      "optional": true,
+      "style": {
+        "fit": "cover",
+        "maxClips": 3,
+        "clipMaxDuration": 6
+      },
+      "source": "videos",
+      "fallback": {
+        "extend": "slideshow",
+        "duration": 12
+      }
+    },
+    {
+      "id": "ending",
+      "type": "ending_card",
+      "start": 68,
+      "duration": 7,
+      "style": {
+        "backgroundColor": "#FFF8F0",
+        "textTemplate": "{blessing}",
+        "defaultBlessing": "执子之手，与子偕老"
+      }
+    }
+  ],
+  "audio": {
+    "bgm": {
+      "source": "preset",
+      "presets": ["romantic_piano", "wedding_strings", "soft_guitar"],
+      "volume": 0.75,
+      "fadeIn": 1.5,
+      "fadeOut": 3
+    }
+  },
+  "formFields": [
+    { "key": "groomName", "label": "新郎姓名", "required": true, "maxLength": 20 },
+    { "key": "brideName", "label": "新娘姓名", "required": true, "maxLength": 20 },
+    { "key": "weddingDate", "label": "婚礼日期", "required": true, "type": "date" },
+    { "key": "blessing", "label": "祝福语", "required": false, "maxLength": 50 }
+  ],
+  "constraints": {
+    "photos": { "min": 10, "max": 20 },
+    "videos": { "min": 0, "max": 3 }
+  }
+}
