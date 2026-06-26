@@ -608,6 +608,7 @@ ffmpeg -i slideshow.mp4 -i bgm/warm_piano.mp3 -c:v copy -c:a aac -shortest -y fi
 
 ## 相关文档
 
+- [技术方案：MVP 全栈架构](./技术方案-MVP全栈架构.md) — **选型、架构、API、Worker、仓库结构（Implementation 细节）**
 - [生活场景 AI 短片工具 — 全链路方案](./生活场景AI短片工具-全链路方案.md)
 - [全链路交付能力培养指南](./全链路交付能力培养指南.md)
 - [和 AI 协作指南 — 全链路项目](./和AI协作指南-全链路项目.md)

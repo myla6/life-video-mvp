@@ -64,7 +64,8 @@ pnpm create next-app web --typescript --tailwind --eslint --app --src-dir=false
 
 ## 文档
 
-- [MVP 开工包：满月](../docs/mvp-满月短片-开工包.md)
-- [全链路方案](../docs/生活场景AI短片工具-全链路方案.md)
-- [和 AI 协作指南](../docs/和AI协作指南-全链路项目.md)
+- [MVP 开工包：满月](./docs/mvp-满月短片-开工包.md)
+- [技术方案：MVP 全栈架构](./docs/技术方案-MVP全栈架构.md)
+- [全链路方案](./docs/生活场景AI短片工具-全链路方案.md)
+- [和 AI 协作指南](./docs/和AI协作指南-全链路项目.md)
 - [ROADMAP](./ROADMAP.md)
