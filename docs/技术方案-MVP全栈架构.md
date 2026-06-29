@@ -708,6 +708,24 @@ MVP 本地跑通后再做，避免过早优化。
 | `OSS_*` | 第二周接入对象存储 |
 | `REDIS_URL` | 第二周队列 |
 
+### 13.4 ffmpeg 为何不在 package.json / requirements.txt
+
+| 组件 | 依赖文件 | ffmpeg |
+|------|----------|--------|
+| Web（Next.js） | `apps/web/package.json` | 不涉及 |
+| Worker（Python） | `worker/requirements.txt` | **不在此列** |
+
+ffmpeg 是**系统级可执行文件**，Worker 通过 `subprocess.run(["ffmpeg", ...])` 调用（见 `worker/render.py`）。本地 `brew install ffmpeg`；生产环境在 **Worker Docker 镜像**里安装：
+
+```dockerfile
+FROM python:3.11-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+# … pip install、COPY worker、CMD python main.py
+```
+
+Web 可放 Vercel；**Worker 必须常驻机**且带 ffmpeg。朋友场景 CPU 压力可控；扩展靠队列 + 多 Worker，而非 Serverless 跑合成。
+
 ---
 
 ## 14. 前端开发者的学习地图
@@ -743,11 +761,160 @@ MVP 本地跑通后再做，避免过早优化。
 
 ### 面试可讲的叙事
 
-> 生活场景纪念短片 MVP：Next.js 全栈负责上传与任务 API，Postgres 持久化任务状态，Python Worker 消费任务并用 ffmpeg 按模板 JSON 合成竖屏 mp4；第一周 DB 轮询打通链路，第二周演进 Redis 与 OSS。
+> 生活场景纪念短片 MVP：Next.js 全栈负责上传与任务 API，Postgres 持久化任务状态，Python Worker 消费任务并用 ffmpeg 按模板 JSON 合成竖屏 mp4；第一周 DB 轮询打通链路，第二周演进 Redis 与 OSS；后续可在输入层接 LLM Agent，合成层不变。
 
 ---
 
-## 15. 明确不做的事
+## 15. 演进：Agent、ffmpeg 部署与扩展
+
+> 与 [ROADMAP Phase 3～5](../ROADMAP.md) 对齐。本文档为**架构备忘**，避免后续对话丢失上下文；Implementation 仍以当前 Phase 1 Day 清单为准，Agent 不挡 MVP 打通。
+
+### 15.1 当前架构（Phase 1）
+
+```text
+用户填表单 + 选模板
+    → POST /api/jobs（Next.js）
+    → Postgres Job(status=created)
+    → Python Worker 轮询 → render.py + ffmpeg
+    → status=completed → 前端轮询预览/下载
+```
+
+这是 **固定模板 + 规则引擎**，无大模型，但已是典型的 **长任务 + 状态机 + 工具（ffmpeg）** 结构。
+
+### 15.2 Agent 接入点（Phase 5，不推翻底层）
+
+Agent **不替代** Worker/ffmpeg，只增强「诉求 → 任务参数」：
+
+```text
+Phase 5A（最小）
+  用户自然语言 → LLM → 结构化 JSON（对齐 Job 字段）
+    → 仍 POST /api/jobs → Worker → ffmpeg
+
+Phase 5B（工具编排）
+  用户诉求 → LLM 拆任务 → 调工具 analyze_photos / pick_bgm / render_video …
+    → 各步写 Job 状态 → 最终 render_video 进现有 Worker
+
+Phase 5C（后期）
+  动态时间轴、高光检测、非固定 template — 工作量大，有用户后再做
+```
+
+**不变的部分**：`Job` / `JobAsset` 表、storage、Worker 消费、ffmpeg 成片、前端轮询。
+
+**新增的部分**：对话 UI、LLM API 路由、Prompt/Schema、（可选）工具注册表。
+
+### 15.3 资源与成本
+
+| 组件 | 资源 | 说明 |
+|------|------|------|
+| ffmpeg Worker | CPU、磁盘 IO | ECS / Docker；1～3 分钟/条，朋友量级单机够用 |
+| LLM | 云 API 按 token | 不占自机 GPU；思考几秒，瓶颈仍在合成 |
+| 自部署大模型 | GPU | MVP 不做 |
+
+### 15.4 扩展路径（量上来时）
+
+```text
+DB 轮询 → Redis/BullMQ → 多 Worker 实例
+本地 storage → OSS + 签名 URL
+单机 Compose → Web（Vercel）+ Worker 集群（ECS）
+```
+
+Agent 层与上述扩展正交：LLM 只负责「理解 + 编排」，重活仍在 Worker。
+
+### 15.5 Agent 阶段还要 ffmpeg 吗？和大模型怎么分工？
+
+**要。** Phase 5 变的是「谁理解用户、谁拆任务」，不是「谁编码出 mp4」。  
+「更像 Agent」= **LLM 编排更多工具**，不等于 **用 LLM 直接生成整段视频、去掉 ffmpeg**。
+
+| 能力 | 谁来做 | 例子 |
+|------|--------|------|
+| 理解用户说了啥 | **LLM** | 「温馨一点、宝宝照放前面」 |
+| 拆任务、选工具 | **Agent / Orchestrator** | 先 analyze，再 pick_bgm，再 render |
+| 看图 / 看视频内容 | **视觉模型（工具）** | 人脸、场景、模糊、高光片段 |
+| 生成文案 | **LLM** | 祝福语、字幕 |
+| **按时间轴拼片、编码、混音、字幕烧录** | **ffmpeg（工具）** | 720×1280 mp4、BGM、drawtext |
+
+LLM **擅长思考和编排**，不擅长：把 N 张照片按秒数精确拼接、H.264 编码、音画同步、批量稳定出片——这些仍是 **ffmpeg 或云转码 API** 的领域。
+
+**Phase 5B 示例（旅行 vlog 混剪）：**
+
+```text
+用户：「旅行 vlog 剪成 1 分钟，高潮放中间，轻快 BGM」
+
+Agent → 调工具：
+  1. analyze_videos      （视觉模型：镜头、运动强度）
+  2. pick_highlights       （规则 + 模型：选片段）
+  3. build_timeline        （LLM/规则：输出时间轴 JSON）
+  4. render_video          （ffmpeg：按 JSON 执行出 mp4）  ← 仍在 Worker
+  5. generate_subtitle     （LLM 文案 → ffmpeg drawtext）
+```
+
+**何时可以少依赖 ffmpeg？**
+
+| 路径 | 说明 | 与本项目关系 |
+|------|------|--------------|
+| AI 成片 API（Runway、可灵等） | 模型直接出视频 | 贵、不可控；生活纪念「用户素材成片」形态不匹配 |
+| 文生视频 | 几乎不用用户素材 | 产品形态不同 |
+| 云剪辑 SaaS | 底层仍是转码管线 | 可接 API，面试叙事弱于自建 Worker |
+
+**结论（生活场景模板 + 用户素材）：** LLM/视觉模型负责 **懂和选**，ffmpeg 负责 **拼和出**。Agent 越强，`render_video` 越像被调用的工具之一，而不是被 LLM 替代。
+
+**面试一句话：**
+
+> Agent 层用 LLM 做意图理解和工具编排；重编码合成仍在 Worker 里用 ffmpeg，保证成本、时延和成片质量可控；视觉模型作为 analyze 工具接入，而不是用 LLM 直接生成整段 mp4。
+
+### 15.6 微信小程序：能直接变吗？API 怎么复用？
+
+**不能一键把 Next.js 变成小程序**，但 **后端 API + Worker + ffmpeg 流水线可复用**；小程序是 **新增客户端**，不是重写后端。
+
+```text
+                    ┌─────────────────┐
+  Web 浏览器  ──────▶│  Next.js        │
+                    │  Route Handlers │──▶ Postgres → Worker → ffmpeg
+  微信小程序  ──────▶│  （同一套 API）  │
+                    └─────────────────┘
+```
+
+| 维度 | 现在（Web） | 微信小程序（Phase 4+） |
+|------|-------------|------------------------|
+| UI | React / Next.js | WXML + WXSS，或 Taro / uni-app |
+| 上传 | `<input type="file">` | `wx.chooseMedia` + `wx.uploadFile` |
+| 预览 | `<video>` | 小程序 `<video>`（需配置合法域名） |
+| 任务 / 合成 | 共用 API | **复用** `POST/GET /api/jobs`、下载接口 |
+| 部署 | Vercel / ECS | 微信开放平台审核 + **HTTPS 域名** |
+
+**可直接复用：** Job 状态机、Prisma、`POST /api/jobs`、`GET /api/jobs/[id]`、下载、Worker、`templates/*.json`、storage/OSS。
+
+**需新做：** 小程序页面（创作 / 进度 / 预览）、上传适配、（可选）微信登录、服务器域名与备案。
+
+**技术选型（届时再定）：**
+
+| 方案 | 优点 | 缺点 |
+|------|------|------|
+| 原生小程序 | 官方、体验好 | 与 React 两套 UI |
+| Taro / uni-app | 部分 React 语法可复用 | 仍要适配差异，非零成本 |
+
+**顺序：** 先 Web + API + Worker 全链路打穿（Phase 1～3），小程序作 Phase 4 触达层，不挡 MVP。
+
+**面试一句话：**
+
+> 架构上 API 与客户端解耦；Web 与小程序共用同一套 Job API 和 Worker 流水线，各端只适配上传与展示。
+
+### 15.7 产品与学习路径（全栈 + Agent 叠层，备忘）
+
+同一产品演进，不另起炉灶：
+
+| 阶段 | 产品 | 学什么 | 客户端 |
+|------|------|--------|--------|
+| 现在～Day 7 | 满月 Web 全链路 | 异步任务、Worker、ffmpeg | Web |
+| Phase 2 | 结婚 / 日常等多模板 | 模板复用、多场景 | Web |
+| Phase 3 | 上线 | Redis、OSS、Docker、ffmpeg 镜像 | Web |
+| Phase 5A | 对话生成 Job 参数 | LLM + JSON Schema + 人工确认 | Web |
+| Phase 5B | 工具编排 | 函数 calling、视觉 analyze 工具 | Web |
+| Phase 4+ | 触达 | — | **+ 小程序** |
+
+场景扩展建议顺序：**满月 → 结婚或小朋友日常 → 旅行 vlog（偏 Phase 5C，时间轴更自由）**。
+
+「完整产品」对个人作品集：**1～2 个场景真实交付 + 可部署 +（可选）Agent 5A**，比同时堆全场景 + 小程序 + 大模型更利于面试叙事。
 
 | 不做 | 原因 |
 |------|------|
@@ -762,7 +929,7 @@ MVP 本地跑通后再做，避免过早优化。
 
 ---
 
-## 16. 附录：Biome 配置要点
+## 17. 附录：Biome 配置要点
 
 Biome 与 Next.js 搭配，不依赖 TanStack Start。
 
@@ -809,4 +976,4 @@ pnpm biome init
 
 ---
 
-*技术方案 v1.0 · 与开工包、全链路方案保持一致；Implementation 以本文 + 开工包 Day 3～7 清单为准。*
+*技术方案 v1.1 · 与开工包、全链路方案、ROADMAP Phase 3～5 保持一致；Implementation 以本文 + 开工包 Day 3～7 清单为准。*
