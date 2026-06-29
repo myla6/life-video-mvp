@@ -11,7 +11,7 @@
 
 ## 技术栈
 
-- **前端**：Next.js + TypeScript（`apps/web`，待初始化）
+- **前端**：Next.js + TypeScript（`apps/web`）
 - **API**：Next.js Route Handlers
 - **数据库**：PostgreSQL + Prisma
 - **队列**：Redis + BullMQ
@@ -45,10 +45,18 @@ cp .env.example .env    # 首次
 pnpm install
 pnpm db:migrate
 pnpm dev                # http://localhost:3000
+
+# 3. Worker（另开终端，合成视频）
+cd worker
+cp .env.example .env    # 首次
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python main.py
 ```
 
 ## 文档
 
+- **[全栈学习笔记：前端转全链路](./docs/全栈学习笔记-前端转全链路.md)** — 心智模型、排查、面试叙事、和 AI 协作验收
 - **[本地开发指南](./docs/本地开发指南.md)** — clone 后怎么装依赖、启数据库、跑 Web
 - [MVP 开工包：满月](./docs/mvp-满月短片-开工包.md)
 - [技术方案：MVP 全栈架构](./docs/技术方案-MVP全栈架构.md)
