@@ -107,10 +107,205 @@ def _run_ffmpeg(args: list[str]) -> None:
 def _load_pil_font(font_path: Path, size: int):
     from PIL import ImageFont
 
-    try:
-        return ImageFont.truetype(str(font_path), size)
-    except OSError:
-        return ImageFont.truetype(str(font_path), size, index=0)
+    # PingFang.ttc 等合集字体：优先 index 0（简中 Regular）
+    for index in (0, 1, 2):
+        try:
+            return ImageFont.truetype(str(font_path), size, index=index)
+        except OSError:
+            continue
+    return ImageFont.truetype(str(font_path), size)
+
+
+def _measure_text(draw, text: str, font) -> tuple[int, int]:
+    bbox = draw.textbbox((0, 0), text, font=font)
+    return bbox[2] - bbox[0], bbox[3] - bbox[1]
+
+
+def _wrap_text(draw, text: str, font, max_width: int, *, max_lines: int = 4) -> list[str]:
+    """按像素宽度换行；优先在逗号/顿号处断行，避免拆开词组。"""
+    import re
+
+    text = text.strip()
+    if not text:
+        return []
+
+    tokens = [t for t in re.split(r"([，,、；;])", text) if t]
+    clauses: list[str] = []
+    buf = ""
+    for token in tokens:
+        if token in "，,、；;":
+            buf += token
+            clauses.append(buf)
+            buf = ""
+        else:
+            buf += token
+    if buf:
+        clauses.append(buf)
+
+    lines: list[str] = []
+    current = ""
+
+    def flush_current() -> None:
+        nonlocal current
+        if current.strip():
+            lines.append(current.strip())
+        current = ""
+
+    def append_chars(fragment: str) -> None:
+        nonlocal current
+        for char in fragment:
+            trial = current + char
+            width, _ = _measure_text(draw, trial, font)
+            if width <= max_width:
+                current = trial
+                continue
+            flush_current()
+            current = char
+            if len(lines) >= max_lines:
+                return
+
+    for clause in clauses:
+        if len(lines) >= max_lines:
+            break
+        candidate = current + clause
+        width, _ = _measure_text(draw, candidate, font)
+        if width <= max_width:
+            current = candidate
+            continue
+        flush_current()
+        clause_width, _ = _measure_text(draw, clause, font)
+        if clause_width <= max_width:
+            current = clause
+        else:
+            append_chars(clause)
+
+    if len(lines) < max_lines and current.strip():
+        lines.append(current.strip())
+
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+
+    consumed = sum(len(line) for line in lines)
+    if consumed < len(text.replace("\n", "")) and lines:
+        last = lines[-1]
+        while last and _measure_text(draw, f"{last}…", font)[0] > max_width:
+            last = last[:-1]
+        lines[-1] = f"{last}…" if last else "…"
+
+    return lines
+
+
+def _balance_lines(draw, lines: list[str], font, max_width: int) -> list[str]:
+    """避免最后一行只剩一两个字。"""
+    if len(lines) < 2:
+        return lines
+
+    balanced = list(lines)
+    while len(balanced) >= 2 and len(balanced[-1]) <= 2:
+        merged = balanced[-2] + balanced[-1]
+        if _measure_text(draw, merged, font)[0] <= max_width:
+            balanced = balanced[:-2] + [merged]
+            continue
+        if len(balanced[-2]) <= 1:
+            break
+        moved = balanced[-2][-1] + balanced[-1]
+        remaining = balanced[-2][:-1]
+        if (
+            _measure_text(draw, remaining, font)[0] <= max_width
+            and _measure_text(draw, moved, font)[0] <= max_width
+        ):
+            balanced = balanced[:-2] + [remaining, moved]
+        else:
+            break
+    return balanced
+
+
+def _fit_font_for_lines(
+    draw,
+    font_path: Path,
+    lines: list[str],
+    *,
+    max_width: int,
+    start_size: int,
+    min_size: int,
+):
+    for size in range(start_size, min_size - 1, -2):
+        font = _load_pil_font(font_path, size)
+        if all(_measure_text(draw, line, font)[0] <= max_width for line in lines):
+            return font, size
+    font = _load_pil_font(font_path, min_size)
+    return font, min_size
+
+
+def _format_event_date(raw: str) -> str:
+    import re
+
+    raw = raw.strip()
+    if not raw:
+        return ""
+    match = re.match(r"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$", raw)
+    if match:
+        year, month, day = match.groups()
+        return f"{year}年{int(month)}月{int(day)}日"
+    return raw
+
+
+def _draw_text_block(
+    draw,
+    *,
+    width: int,
+    height: int,
+    font_path: Path,
+    sections: list[tuple[str, int, str, int]],
+    horizontal_margin_ratio: float = 0.1,
+    section_gap: int = 32,
+    line_gap_ratio: float = 0.35,
+) -> None:
+    """
+    多段文字垂直居中绘制。sections: (text, start_font_size, color, max_lines)
+    """
+    margin = int(width * horizontal_margin_ratio)
+    max_width = width - margin * 2
+
+    prepared: list[tuple[list[str], object, str, int]] = []
+    for text, start_size, color, max_lines in sections:
+        if not text.strip():
+            continue
+        font = _load_pil_font(font_path, start_size)
+        lines: list[str] = []
+        size = start_size
+        for size in range(start_size, max(22, start_size // 2) - 1, -2):
+            font = _load_pil_font(font_path, size)
+            lines = _wrap_text(draw, text, font, max_width, max_lines=max_lines)
+            lines = _balance_lines(draw, lines, font, max_width)
+            if all(_measure_text(draw, line, font)[0] <= max_width for line in lines):
+                break
+        if lines:
+            prepared.append((lines, font, color, size))
+
+    if not prepared:
+        return
+
+    total_height = 0
+    section_heights: list[int] = []
+    for lines, font, _color, size in prepared:
+        _, line_h = _measure_text(draw, "满", font)
+        block_h = len(lines) * line_h + max(0, len(lines) - 1) * int(size * line_gap_ratio)
+        section_heights.append(block_h)
+        total_height += block_h
+    total_height += section_gap * (len(prepared) - 1)
+
+    y = (height - total_height) // 2
+    for idx, (lines, font, color, size) in enumerate(prepared):
+        _, line_h = _measure_text(draw, "满", font)
+        line_gap = int(size * line_gap_ratio)
+        for line in lines:
+            text_w, _ = _measure_text(draw, line, font)
+            x = (width - text_w) // 2
+            draw.text((x, y), line, font=font, fill=color)
+            y += line_h + line_gap
+        if idx < len(prepared) - 1:
+            y += section_gap - line_gap
 
 
 def _draw_centered_text(
@@ -182,28 +377,20 @@ def _render_intro_card(
 
     img = Image.new("RGB", (width, height), bg)
     draw = ImageDraw.Draw(img)
-    title_font = _load_pil_font(font_path, 56)
-    subtitle_font = _load_pil_font(font_path, 42)
-    date_font = _load_pil_font(font_path, 30)
-    color_title = "#881337"
-    color_sub = "#9F1239"
-    color_date = "#BE123C"
 
-    _draw_centered_text(
-        draw, baby_name, y=int(height * 0.36), width=width, font=title_font, fill=color_title
+    _draw_text_block(
+        draw,
+        width=width,
+        height=height,
+        font_path=font_path,
+        sections=[
+            (baby_name.strip() or "宝宝", 64, "#881337", 2),
+            (subtitle, 44, "#9F1239", 1),
+            (_format_event_date(event_date), 34, "#BE123C", 1),
+        ],
+        horizontal_margin_ratio=0.12,
+        section_gap=36,
     )
-    _draw_centered_text(
-        draw, subtitle, y=int(height * 0.46), width=width, font=subtitle_font, fill=color_sub
-    )
-    if event_date:
-        _draw_centered_text(
-            draw,
-            event_date,
-            y=int(height * 0.54),
-            width=width,
-            font=date_font,
-            fill=color_date,
-        )
 
     png_path = tmp_dir / "intro.png"
     img.save(png_path)
@@ -215,17 +402,6 @@ def _render_intro_card(
         fps=fps,
         duration=duration,
     )
-
-
-def _ending_font_size(text: str) -> int:
-    length = len(text)
-    if length <= 10:
-        return 44
-    if length <= 18:
-        return 38
-    if length <= 28:
-        return 32
-    return 28
 
 
 def _render_ending_card(
@@ -250,13 +426,17 @@ def _render_ending_card(
 
     img = Image.new("RGB", (width, height), bg)
     draw = ImageDraw.Draw(img)
-    font = _load_pil_font(font_path, _ending_font_size(text))
-    bbox = draw.textbbox((0, 0), text, font=font)
-    text_w = bbox[2] - bbox[0]
-    text_h = bbox[3] - bbox[1]
-    x = (width - text_w) // 2
-    y = (height - text_h) // 2
-    draw.text((x, y), text, font=font, fill="#881337")
+
+    _draw_text_block(
+        draw,
+        width=width,
+        height=height,
+        font_path=font_path,
+        sections=[(text, 48, "#881337", 4)],
+        horizontal_margin_ratio=0.14,
+        section_gap=24,
+        line_gap_ratio=0.45,
+    )
 
     png_path = tmp_dir / "ending.png"
     img.save(png_path)

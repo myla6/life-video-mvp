@@ -24,6 +24,44 @@ import { NextResponse } from "next/server"
 
 export const runtime = "nodejs"
 
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const limit = Math.min(Math.max(Number(searchParams.get("limit") ?? 30), 1), 100)
+
+    const jobs = await prisma.job.findMany({
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      select: {
+        id: true,
+        status: true,
+        babyName: true,
+        eventDate: true,
+        blessing: true,
+        createdAt: true,
+        outputUrl: true,
+        errorMsg: true,
+      },
+    })
+
+    return NextResponse.json({
+      jobs: jobs.map((job) => ({
+        ...job,
+        outputUrl:
+          job.status === "completed"
+            ? (job.outputUrl ?? getJobDownloadUrl(job.id))
+            : null,
+      })),
+    })
+  } catch (error) {
+    console.error("GET /api/jobs failed:", error)
+    return NextResponse.json(
+      { error: "INTERNAL_ERROR", message: "获取历史任务失败" },
+      { status: 500 },
+    )
+  }
+}
+
 async function saveFile(file: File, targetPath: string): Promise<void> {
   const buffer = Buffer.from(await file.arrayBuffer())
   await fs.writeFile(targetPath, buffer)

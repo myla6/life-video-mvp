@@ -76,12 +76,18 @@ export default function JobPage() {
       <header className="border-b border-rose-100 bg-white/60">
         <div className="mx-auto flex max-w-2xl items-center justify-between px-6 py-4">
           <Link
+            href="/jobs"
+            className="text-sm text-rose-700 hover:text-rose-900"
+          >
+            ← 历史成片
+          </Link>
+          <span className="font-medium text-rose-900">任务进度</span>
+          <Link
             href="/create/baby-moon"
             className="text-sm text-rose-700 hover:text-rose-900"
           >
-            ← 重新制作
+            重新制作
           </Link>
-          <span className="font-medium text-rose-900">任务进度</span>
         </div>
       </header>
 

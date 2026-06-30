@@ -27,6 +27,12 @@ export default function HomePage() {
           >
             开始制作 · 宝宝满月
           </Link>
+          <Link
+            href="/jobs"
+            className="inline-flex items-center rounded-full border border-rose-200 bg-white px-6 py-3 text-base font-medium text-rose-800 transition hover:bg-rose-50"
+          >
+            查看历史成片
+          </Link>
         </div>
 
         <ul className="mt-12 grid gap-3 text-sm text-rose-900/70 sm:grid-cols-3">
