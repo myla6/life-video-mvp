@@ -32,7 +32,7 @@
         "transition": "fade",
         "transitionDuration": 0.5,
         "fit": "cover",
-        "kenBurns": false
+        "kenBurns": true
       },
       "source": "photos"
     },

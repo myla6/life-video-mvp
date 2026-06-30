@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES_DIR = ROOT / "templates"
 ASSETS_DIR = ROOT / "assets"
 FONTS_DIR = ASSETS_DIR / "fonts"
+CARDS_DIR = ASSETS_DIR / "cards"
 
 # macOS 常见中文字体 fallback（assets/fonts 无 Noto 时）
 _MACOS_FONT_CANDIDATES = [
@@ -48,6 +49,10 @@ def compute_duration(
     segments = _segment_map(template)
     photo_duration = float(segments["slideshow"]["style"]["photoDuration"])
     slideshow_duration = photo_count * photo_duration
+    slide_style = segments["slideshow"]["style"]
+    if photo_count > 1 and slide_style.get("transition") == "fade":
+        transition_duration = float(slide_style.get("transitionDuration", 0))
+        slideshow_duration -= (photo_count - 1) * transition_duration
 
     video_total = 0.0
     if video_durations:
@@ -374,6 +379,150 @@ def _draw_centered_text(
     draw.text((x, y), text, font=font, fill=fill)
 
 
+def _render_photo_segment(
+    *,
+    photo_path: Path,
+    output: Path,
+    width: int,
+    height: int,
+    fps: int,
+    duration: float,
+    ken_burns: bool,
+    zoom_end: float = 1.08,
+) -> None:
+    frames = max(int(duration * fps), 1)
+    if ken_burns:
+        zoom_step = (zoom_end - 1.0) / frames
+        vf = (
+            f"scale={width * 4}:{height * 4}:force_original_aspect_ratio=increase,"
+            f"crop={width * 4}:{height * 4},"
+            f"zoompan=z='min(zoom+{zoom_step:.6f},{zoom_end})':"
+            f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+            f"d={frames}:s={width}x{height}:fps={fps},format=yuv420p"
+        )
+    else:
+        vf = (
+            f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+            f"crop={width}:{height},fps={fps},format=yuv420p"
+        )
+    _run_ffmpeg(
+        [
+            "ffmpeg",
+            "-y",
+            "-loop",
+            "1",
+            "-i",
+            str(photo_path),
+            "-t",
+            str(duration),
+            "-vf",
+            vf,
+            "-pix_fmt",
+            "yuv420p",
+            str(output),
+        ]
+    )
+
+
+def _concat_videos_with_xfade(
+    segments: list[Path],
+    output: Path,
+    *,
+    transition_duration: float,
+    segment_duration: float,
+) -> None:
+    import shutil
+
+    if len(segments) == 1:
+        shutil.copy(segments[0], output)
+        return
+
+    inputs: list[str] = []
+    for seg in segments:
+        inputs.extend(["-i", str(seg)])
+
+    filters: list[str] = []
+    for i in range(1, len(segments)):
+        offset = i * (segment_duration - transition_duration)
+        left = "[0:v]" if i == 1 else f"[v{i - 1}]"
+        out = "[vout]" if i == len(segments) - 1 else f"[v{i}]"
+        filters.append(
+            f"{left}[{i}:v]xfade=transition=fade:duration={transition_duration}:"
+            f"offset={offset:.3f}{out}"
+        )
+
+    _run_ffmpeg(
+        [
+            "ffmpeg",
+            "-y",
+            *inputs,
+            "-filter_complex",
+            ";".join(filters),
+            "-map",
+            "[vout]",
+            "-pix_fmt",
+            "yuv420p",
+            str(output),
+        ]
+    )
+
+
+def _generate_intro_card_template(path: Path, width: int, height: int) -> None:
+    from PIL import Image, ImageDraw
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    img = Image.new("RGB", (width, height), "#FFF8F8")
+    draw = ImageDraw.Draw(img)
+
+    draw.ellipse([-100, -60, 460, 340], fill="#FFE4EC")
+    draw.ellipse([420, 880, 880, 1320], fill="#FCE7F3")
+    draw.rounded_rectangle(
+        [40, 360, width - 40, height - 360],
+        radius=28,
+        outline="#FDA4AF",
+        width=2,
+    )
+
+    cx = width // 2
+    draw.line([(cx - 72, 500), (cx + 72, 500)], fill="#FB7185", width=2)
+    draw.line([(cx - 36, 514), (cx + 36, 514)], fill="#FDA4AF", width=1)
+    draw.ellipse([cx - 6, 330, cx + 6, 342], fill="#FB7185")
+
+    img.save(path, "PNG")
+
+
+def _generate_ending_card_template(path: Path, width: int, height: int) -> None:
+    from PIL import Image, ImageDraw
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    img = Image.new("RGB", (width, height), "#FFF8F8")
+    draw = ImageDraw.Draw(img)
+
+    draw.ellipse([-80, 200, 320, 560], fill="#FCE7F3")
+    draw.ellipse([500, 760, 900, 1100], fill="#FFE4EC")
+    draw.rounded_rectangle(
+        [56, 420, width - 56, height - 420],
+        radius=24,
+        outline="#FDA4AF",
+        width=2,
+    )
+
+    draw.arc([80, 460, 160, 540], start=200, end=340, fill="#FDA4AF", width=3)
+    draw.arc([width - 160, height - 540, width - 80, height - 460], start=20, end=160, fill="#FDA4AF", width=3)
+
+    img.save(path, "PNG")
+
+
+def _ensure_card_template(kind: str, width: int, height: int) -> Path:
+    path = CARDS_DIR / f"{kind}_bg.png"
+    if not path.exists():
+        if kind == "intro":
+            _generate_intro_card_template(path, width, height)
+        else:
+            _generate_ending_card_template(path, width, height)
+    return path
+
+
 def _png_to_video_segment(
     *,
     png_path: Path,
@@ -423,10 +572,10 @@ def _render_intro_card(
     intro = _segment_map(template)["intro"]
     style = intro["style"]
     duration = float(intro["duration"])
-    bg = style.get("backgroundColor", "#FFF5F5")
     subtitle = style.get("subtitleTemplate", "满月快乐")
 
-    img = Image.new("RGB", (width, height), bg)
+    template_path = _ensure_card_template("intro", width, height)
+    img = Image.open(template_path).convert("RGB")
     draw = ImageDraw.Draw(img)
 
     _draw_text_block(
@@ -471,11 +620,11 @@ def _render_ending_card(
     ending = _segment_map(template)["ending"]
     style = ending["style"]
     duration = float(ending["duration"])
-    bg = style.get("backgroundColor", "#FFF5F5")
     default = style.get("defaultBlessing", "健康成长，平安喜乐")
     text = (blessing or default).strip() or default
 
-    img = Image.new("RGB", (width, height), bg)
+    template_path = _ensure_card_template("ending", width, height)
+    img = Image.open(template_path).convert("RGB")
     draw = ImageDraw.Draw(img)
 
     _draw_text_block(
@@ -551,6 +700,10 @@ def render_baby_full_moon(
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
     segment_files: list[Path] = []
+    slide_style = _segment_map(template)["slideshow"]["style"]
+    ken_burns = bool(slide_style.get("kenBurns", False))
+    transition = slide_style.get("transition", "none")
+    transition_duration = float(slide_style.get("transitionDuration", 0.5))
 
     if include_cards:
         font_path = _resolve_font_path()
@@ -568,30 +721,32 @@ def render_baby_full_moon(
         )
         segment_files.append(intro_seg)
 
+    photo_segments: list[Path] = []
     for i, photo in enumerate(photo_paths):
         seg = tmp_dir / f"seg_{i:03d}.mp4"
-        vf = (
-            f"scale={width}:{height}:force_original_aspect_ratio=increase,"
-            f"crop={width}:{height},fps={fps},format=yuv420p"
+        _render_photo_segment(
+            photo_path=photo,
+            output=seg,
+            width=width,
+            height=height,
+            fps=fps,
+            duration=photo_duration,
+            ken_burns=ken_burns,
         )
-        _run_ffmpeg(
-            [
-                "ffmpeg",
-                "-y",
-                "-loop",
-                "1",
-                "-i",
-                str(photo),
-                "-t",
-                str(photo_duration),
-                "-vf",
-                vf,
-                "-pix_fmt",
-                "yuv420p",
-                str(seg),
-            ]
-        )
-        segment_files.append(seg)
+        photo_segments.append(seg)
+
+    if photo_segments:
+        if len(photo_segments) > 1 and transition == "fade":
+            slideshow = tmp_dir / "slideshow.mp4"
+            _concat_videos_with_xfade(
+                photo_segments,
+                slideshow,
+                transition_duration=transition_duration,
+                segment_duration=photo_duration,
+            )
+            segment_files.append(slideshow)
+        else:
+            segment_files.extend(photo_segments)
 
     if video_paths and video_durations:
         clip_cfg = _segment_map(template)["video_clips"]["style"]

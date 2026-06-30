@@ -22,10 +22,11 @@ function estimateDuration(photoCount: number, videoCount: number): string {
   const intro = 5
   const ending = 5
   const photoDuration = 2.8
+  const transitionDuration = 0.5
+  let slideshow = photoCount * photoDuration
+  if (photoCount > 1) slideshow -= (photoCount - 1) * transitionDuration
   const videoDuration = Math.min(videoCount, 2) * 5
-  const total = Math.round(
-    intro + photoCount * photoDuration + videoDuration + ending,
-  )
+  const total = Math.round(intro + slideshow + videoDuration + ending)
   const parts = [`${photoCount} 张照片`]
   if (videoCount > 0) parts.push(`${videoCount} 段视频`)
   return `预计成片约 ${total} 秒（${parts.join("、")}）`

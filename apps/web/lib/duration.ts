@@ -3,8 +3,18 @@ import type { BabyMoonTemplate } from "@/lib/template"
 const INTRO_DURATION = 5
 const ENDING_DURATION = 5
 const PHOTO_DURATION = 2.8
+const TRANSITION_DURATION = 0.5
 const MAX_VIDEO_CLIPS = 2
 const MAX_CLIP_DURATION = 5
+
+function slideshowDurationSec(photoCount: number): number {
+  if (photoCount <= 0) return 0
+  let total = photoCount * PHOTO_DURATION
+  if (photoCount > 1) {
+    total -= (photoCount - 1) * TRANSITION_DURATION
+  }
+  return total
+}
 
 export function computeEstimatedDurationSec(
   photoCount: number,
@@ -14,7 +24,12 @@ export function computeEstimatedDurationSec(
     videoCount > 0
       ? Math.min(videoCount, MAX_VIDEO_CLIPS) * MAX_CLIP_DURATION
       : 0
-  return INTRO_DURATION + photoCount * PHOTO_DURATION + videoTotal + ENDING_DURATION
+  return (
+    INTRO_DURATION +
+    slideshowDurationSec(photoCount) +
+    videoTotal +
+    ENDING_DURATION
+  )
 }
 
 export function formatEstimatedDuration(
