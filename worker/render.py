@@ -104,6 +104,57 @@ def _run_ffmpeg(args: list[str]) -> None:
         raise RuntimeError(f"ffmpeg 失败: {stderr[-800:]}")
 
 
+def _probe_duration(path: Path) -> float:
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return float(result.stdout.strip())
+
+
+def _render_video_segment(
+    *,
+    video_path: Path,
+    output: Path,
+    width: int,
+    height: int,
+    fps: int,
+    clip_duration: float,
+) -> None:
+    """用户短视频：裁切为竖屏、截断时长、去掉原声（成片只用 BGM）。"""
+    vf = (
+        f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+        f"crop={width}:{height},fps={fps},format=yuv420p"
+    )
+    _run_ffmpeg(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(video_path),
+            "-t",
+            str(clip_duration),
+            "-vf",
+            vf,
+            "-an",
+            "-pix_fmt",
+            "yuv420p",
+            str(output),
+        ]
+    )
+
+
 def _load_pil_font(font_path: Path, size: int):
     from PIL import ImageFont
 
@@ -463,7 +514,7 @@ def render_baby_full_moon(
     include_cards: bool = True,
 ) -> Path:
     """
-    照片轮播 + 可选标题/结尾卡 + BGM，输出竖屏 mp4。
+    片头 + 照片轮播 + 可选视频片段 + 片尾 + BGM，输出竖屏 mp4。
     时长按模板 4.4 计算，不凑固定 60 秒。
     """
     import shutil
@@ -479,8 +530,12 @@ def render_baby_full_moon(
 
     video_durations: list[float] = []
     if video_paths:
-        max_clip = float(_segment_map(template)["video_clips"]["style"]["clipMaxDuration"])
-        video_durations = [max_clip] * len(video_paths)
+        clip_cfg = _segment_map(template)["video_clips"]["style"]
+        max_clip = float(clip_cfg["clipMaxDuration"])
+        max_clips = int(clip_cfg["maxClips"])
+        for video in video_paths[:max_clips]:
+            raw = _probe_duration(video)
+            video_durations.append(min(raw, max_clip))
 
     duration, photo_duration = compute_duration(
         template,
@@ -537,6 +592,23 @@ def render_baby_full_moon(
             ]
         )
         segment_files.append(seg)
+
+    if video_paths and video_durations:
+        clip_cfg = _segment_map(template)["video_clips"]["style"]
+        max_clips = int(clip_cfg["maxClips"])
+        for i, (video, clip_duration) in enumerate(
+            zip(video_paths[:max_clips], video_durations)
+        ):
+            seg = tmp_dir / f"video_{i:03d}.mp4"
+            _render_video_segment(
+                video_path=video,
+                output=seg,
+                width=width,
+                height=height,
+                fps=fps,
+                clip_duration=clip_duration,
+            )
+            segment_files.append(seg)
 
     if include_cards:
         ending_seg = tmp_dir / "ending.mp4"
