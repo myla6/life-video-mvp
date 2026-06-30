@@ -11,6 +11,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES_DIR = ROOT / "templates"
 ASSETS_DIR = ROOT / "assets"
+FONTS_DIR = ASSETS_DIR / "fonts"
+
+# macOS 常见中文字体 fallback（assets/fonts 无 Noto 时）
+_MACOS_FONT_CANDIDATES = [
+    Path("/System/Library/Fonts/PingFang.ttc"),
+    Path("/System/Library/Fonts/STHeiti Medium.ttc"),
+    Path("/System/Library/Fonts/Supplemental/Songti.ttc"),
+]
 
 
 def load_template(template_id: str) -> dict:
@@ -36,7 +44,6 @@ def compute_duration(
 ) -> tuple[float, float]:
     """
     按开工包 4.4：开头 + 照片×2.8 + 视频 + 结尾。
-    include_cards=False 时仅算轮播段（Day 2 幻灯片阶段用）。
     """
     segments = _segment_map(template)
     photo_duration = float(segments["slideshow"]["style"]["photoDuration"])
@@ -75,6 +82,194 @@ def _resolve_bgm_path(bgm_preset: str, bgm_path: Path | None) -> Path | None:
     return None
 
 
+def _resolve_font_path() -> Path:
+    if FONTS_DIR.is_dir():
+        for pattern in ("*.otf", "*.ttf", "*.OTF", "*.TTF", "*.ttc"):
+            matches = sorted(FONTS_DIR.glob(pattern))
+            if matches:
+                return matches[0]
+    for candidate in _MACOS_FONT_CANDIDATES:
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError(
+        "未找到中文字体。请将 NotoSansSC-Medium.otf 放入 assets/fonts/，"
+        "或在 macOS 上确保系统字体可用。"
+    )
+
+
+def _run_ffmpeg(args: list[str]) -> None:
+    result = subprocess.run(args, capture_output=True, text=True)
+    if result.returncode != 0:
+        stderr = (result.stderr or "").strip()
+        raise RuntimeError(f"ffmpeg 失败: {stderr[-800:]}")
+
+
+def _load_pil_font(font_path: Path, size: int):
+    from PIL import ImageFont
+
+    try:
+        return ImageFont.truetype(str(font_path), size)
+    except OSError:
+        return ImageFont.truetype(str(font_path), size, index=0)
+
+
+def _draw_centered_text(
+    draw,
+    text: str,
+    *,
+    y: int,
+    width: int,
+    font,
+    fill: str,
+) -> None:
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_w = bbox[2] - bbox[0]
+    x = (width - text_w) // 2
+    draw.text((x, y), text, font=font, fill=fill)
+
+
+def _png_to_video_segment(
+    *,
+    png_path: Path,
+    output: Path,
+    width: int,
+    height: int,
+    fps: int,
+    duration: float,
+) -> None:
+    vf = (
+        f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+        f"crop={width}:{height},fps={fps},format=yuv420p"
+    )
+    _run_ffmpeg(
+        [
+            "ffmpeg",
+            "-y",
+            "-loop",
+            "1",
+            "-i",
+            str(png_path),
+            "-t",
+            str(duration),
+            "-vf",
+            vf,
+            "-pix_fmt",
+            "yuv420p",
+            str(output),
+        ]
+    )
+
+
+def _render_intro_card(
+    *,
+    output: Path,
+    template: dict,
+    width: int,
+    height: int,
+    fps: int,
+    baby_name: str,
+    event_date: str,
+    font_path: Path,
+    tmp_dir: Path,
+) -> None:
+    from PIL import Image, ImageDraw
+
+    intro = _segment_map(template)["intro"]
+    style = intro["style"]
+    duration = float(intro["duration"])
+    bg = style.get("backgroundColor", "#FFF5F5")
+    subtitle = style.get("subtitleTemplate", "满月快乐")
+
+    img = Image.new("RGB", (width, height), bg)
+    draw = ImageDraw.Draw(img)
+    title_font = _load_pil_font(font_path, 56)
+    subtitle_font = _load_pil_font(font_path, 42)
+    date_font = _load_pil_font(font_path, 30)
+    color_title = "#881337"
+    color_sub = "#9F1239"
+    color_date = "#BE123C"
+
+    _draw_centered_text(
+        draw, baby_name, y=int(height * 0.36), width=width, font=title_font, fill=color_title
+    )
+    _draw_centered_text(
+        draw, subtitle, y=int(height * 0.46), width=width, font=subtitle_font, fill=color_sub
+    )
+    if event_date:
+        _draw_centered_text(
+            draw,
+            event_date,
+            y=int(height * 0.54),
+            width=width,
+            font=date_font,
+            fill=color_date,
+        )
+
+    png_path = tmp_dir / "intro.png"
+    img.save(png_path)
+    _png_to_video_segment(
+        png_path=png_path,
+        output=output,
+        width=width,
+        height=height,
+        fps=fps,
+        duration=duration,
+    )
+
+
+def _ending_font_size(text: str) -> int:
+    length = len(text)
+    if length <= 10:
+        return 44
+    if length <= 18:
+        return 38
+    if length <= 28:
+        return 32
+    return 28
+
+
+def _render_ending_card(
+    *,
+    output: Path,
+    template: dict,
+    width: int,
+    height: int,
+    fps: int,
+    blessing: str,
+    font_path: Path,
+    tmp_dir: Path,
+) -> None:
+    from PIL import Image, ImageDraw
+
+    ending = _segment_map(template)["ending"]
+    style = ending["style"]
+    duration = float(ending["duration"])
+    bg = style.get("backgroundColor", "#FFF5F5")
+    default = style.get("defaultBlessing", "健康成长，平安喜乐")
+    text = (blessing or default).strip() or default
+
+    img = Image.new("RGB", (width, height), bg)
+    draw = ImageDraw.Draw(img)
+    font = _load_pil_font(font_path, _ending_font_size(text))
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+    x = (width - text_w) // 2
+    y = (height - text_h) // 2
+    draw.text((x, y), text, font=font, fill="#881337")
+
+    png_path = tmp_dir / "ending.png"
+    img.save(png_path)
+    _png_to_video_segment(
+        png_path=png_path,
+        output=output,
+        width=width,
+        height=height,
+        fps=fps,
+        duration=duration,
+    )
+
+
 def render_baby_full_moon(
     *,
     photo_paths: list[Path],
@@ -85,11 +280,10 @@ def render_baby_full_moon(
     bgm_preset: str = "warm_piano",
     bgm_path: Path | None = None,
     video_paths: list[Path] | None = None,
-    include_cards: bool = False,
+    include_cards: bool = True,
 ) -> Path:
     """
-    照片轮播 + BGM，输出竖屏 mp4。
-    include_cards=False：当前仅轮播（标题/结尾卡 TODO）。
+    照片轮播 + 可选标题/结尾卡 + BGM，输出竖屏 mp4。
     时长按模板 4.4 计算，不凑固定 60 秒。
     """
     import shutil
@@ -105,7 +299,6 @@ def render_baby_full_moon(
 
     video_durations: list[float] = []
     if video_paths:
-        # TODO: ffprobe 读取实际时长；MVP 先按上限估算
         max_clip = float(_segment_map(template)["video_clips"]["style"]["clipMaxDuration"])
         video_durations = [max_clip] * len(video_paths)
 
@@ -123,13 +316,30 @@ def render_baby_full_moon(
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
     segment_files: list[Path] = []
+
+    if include_cards:
+        font_path = _resolve_font_path()
+        intro_seg = tmp_dir / "intro.mp4"
+        _render_intro_card(
+            output=intro_seg,
+            template=template,
+            width=width,
+            height=height,
+            fps=fps,
+            baby_name=baby_name,
+            event_date=event_date,
+            font_path=font_path,
+            tmp_dir=tmp_dir,
+        )
+        segment_files.append(intro_seg)
+
     for i, photo in enumerate(photo_paths):
         seg = tmp_dir / f"seg_{i:03d}.mp4"
         vf = (
             f"scale={width}:{height}:force_original_aspect_ratio=increase,"
             f"crop={width}:{height},fps={fps},format=yuv420p"
         )
-        subprocess.run(
+        _run_ffmpeg(
             [
                 "ffmpeg",
                 "-y",
@@ -144,11 +354,23 @@ def render_baby_full_moon(
                 "-pix_fmt",
                 "yuv420p",
                 str(seg),
-            ],
-            check=True,
-            capture_output=True,
+            ]
         )
         segment_files.append(seg)
+
+    if include_cards:
+        ending_seg = tmp_dir / "ending.mp4"
+        _render_ending_card(
+            output=ending_seg,
+            template=template,
+            width=width,
+            height=height,
+            fps=fps,
+            blessing=blessing,
+            font_path=font_path,
+            tmp_dir=tmp_dir,
+        )
+        segment_files.append(ending_seg)
 
     concat_list = tmp_dir / "concat.txt"
     concat_list.write_text(
@@ -156,8 +378,8 @@ def render_baby_full_moon(
         encoding="utf-8",
     )
 
-    slideshow = tmp_dir / "slideshow.mp4"
-    subprocess.run(
+    main_video = tmp_dir / "main_video.mp4"
+    _run_ffmpeg(
         [
             "ffmpeg",
             "-y",
@@ -169,20 +391,18 @@ def render_baby_full_moon(
             str(concat_list),
             "-c",
             "copy",
-            str(slideshow),
-        ],
-        check=True,
-        capture_output=True,
+            str(main_video),
+        ]
     )
 
     resolved_bgm = _resolve_bgm_path(bgm_preset, bgm_path)
     if resolved_bgm:
-        subprocess.run(
+        _run_ffmpeg(
             [
                 "ffmpeg",
                 "-y",
                 "-i",
-                str(slideshow),
+                str(main_video),
                 "-stream_loop",
                 "-1",
                 "-i",
@@ -198,29 +418,24 @@ def render_baby_full_moon(
                 "-t",
                 str(duration),
                 str(output_path),
-            ],
-            check=True,
-            capture_output=True,
+            ]
         )
     else:
-        subprocess.run(
+        _run_ffmpeg(
             [
                 "ffmpeg",
                 "-y",
                 "-i",
-                str(slideshow),
+                str(main_video),
                 "-c",
                 "copy",
                 "-t",
                 str(duration),
                 str(output_path),
-            ],
-            check=True,
-            capture_output=True,
+            ]
         )
 
     shutil.rmtree(tmp_dir)
-    # TODO: intro / ending 标题卡、video_clips、xfade 转场
     return output_path
 
 
@@ -244,7 +459,14 @@ if __name__ == "__main__":
     photos = _collect_photos(photos_dir)
     print(estimate_duration_text("baby_full_moon_v1", len(photos)))
     print(f"照片 {len(photos)} 张 → {output}")
-    render_baby_full_moon(photo_paths=photos, output_path=output)
+    render_baby_full_moon(
+        photo_paths=photos,
+        output_path=output,
+        baby_name="小糯米",
+        event_date="2026-05-20",
+        blessing="健康成长，平安喜乐",
+        include_cards=True,
+    )
     probe = subprocess.run(
         [
             "ffprobe",

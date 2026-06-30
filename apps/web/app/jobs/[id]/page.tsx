@@ -158,9 +158,9 @@ export default function JobPage() {
                 </p>
                 <Link
                   href="/create/baby-moon"
-                  className="mt-4 inline-block text-sm font-medium text-rose-700 underline"
+                  className="mt-4 inline-flex w-full items-center justify-center rounded-full border border-rose-300 bg-white px-6 py-3 text-sm font-medium text-rose-800 hover:bg-rose-50"
                 >
-                  返回修改素材
+                  重新制作
                 </Link>
               </div>
             )}

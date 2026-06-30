@@ -536,9 +536,9 @@ ffmpeg -i slideshow.mp4 -i bgm/warm_piano.mp3 -c:v copy -c:a aac -shortest -y fi
 
 ### Day 6 — 打磨主流程
 
-- [ ] 校验：照片 < 5 张时前端拦截
-- [ ] 失败态：展示 errorMsg + 重试按钮
-- [ ] 标题卡/结尾卡：先用 ffmpeg drawtext 或生成简单 PNG 叠上去
+- [x] 校验：照片 < 5 张时前端拦截
+- [x] 失败态：展示 errorMsg + 重试按钮
+- [x] 标题卡/结尾卡：Pillow 生成 PNG → ffmpeg 转 5s 视频段（本机 ffmpeg 无 drawtext 时用此方案）
 
 ### Day 7 — 给朋友做第一条真实成片
 

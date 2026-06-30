@@ -8,7 +8,7 @@
 - [x] Day 2：本地 ffmpeg 出第一条竖屏 mp4（时长按 4.4 随素材计算）
 - [x] Day 3：Next.js 上传 + 创建任务 API
 - [x] Day 4：Worker 轮询 DB + render.py 合成
-- [ ] Day 5～6：全链路联调打磨 + 标题卡
+- [x] Day 5～6：全链路联调 + 标题卡/结尾卡（Day 6）
 - [ ] Day 7：给朋友做 1 条真实满月成片
 
 **模板**：`templates/baby_full_moon_v1.json`
@@ -57,7 +57,7 @@
 
 **前置**：Phase 2 结婚模板或同类场景模板跑通。
 
-- [ ] 标题卡 / 结尾卡完善（ffmpeg drawtext 或 PNG 叠加）
+- [x] 标题卡 / 结尾卡（Pillow PNG + ffmpeg，Day 6 已完成）
 - [ ] 横屏版本
 - [ ] AI 空镜（5 秒点缀，非核心，可选云 API）
 - [ ] **微信小程序**（新客户端，**复用现有 Job API + Worker**，不能直接把 Next.js 变成小程序）
