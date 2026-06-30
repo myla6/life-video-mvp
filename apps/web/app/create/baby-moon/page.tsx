@@ -1,5 +1,7 @@
 "use client"
 
+import { DatePickerField } from "@/components/create/date-picker-field"
+import { MediaUploadField } from "@/components/create/media-upload-field"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
@@ -56,7 +58,7 @@ export default function CreateBabyMoonPage() {
 
   const photoMin = template?.constraints.photos.min ?? 5
   const photoMax = template?.constraints.photos.max ?? 15
-  const videoMax = template?.constraints.videos.max ?? 2
+  const videoMaxClips = template?.constraints.videos.max ?? 2
 
   const durationText = useMemo(
     () => estimateDuration(photos.length, videos.length),
@@ -68,18 +70,6 @@ export default function CreateBabyMoonPage() {
     eventDate.length > 0 &&
     photos.length >= photoMin &&
     !submitting
-
-  function handlePhotoChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files ?? [])
-    setPhotos(files)
-    setError(null)
-  }
-
-  function handleVideoChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files ?? [])
-    setVideos(files)
-    setError(null)
-  }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -129,40 +119,35 @@ export default function CreateBabyMoonPage() {
         onSubmit={handleSubmit}
         className="mx-auto max-w-2xl space-y-8 px-6 py-10"
       >
-        <section className="space-y-4 rounded-3xl border border-rose-100 bg-white p-6 shadow-sm">
+        <section className="space-y-6 rounded-3xl border border-rose-100 bg-white p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-rose-950">上传素材</h2>
 
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-rose-900">
-              照片（{photoMin}～{photoMax} 张）*
-            </span>
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              multiple
-              onChange={handlePhotoChange}
-              className="block w-full text-sm text-rose-900 file:mr-4 file:rounded-full file:border-0 file:bg-rose-100 file:px-4 file:py-2 file:text-sm file:font-medium file:text-rose-800 hover:file:bg-rose-200"
-            />
-            {photos.length > 0 && (
-              <p className="text-sm text-rose-700">已选 {photos.length} 张照片</p>
-            )}
-          </label>
+          <MediaUploadField
+            kind="photo"
+            label={`照片（${photoMin}～${photoMax} 张）*`}
+            hint="支持 JPG、PNG、WebP，可多次添加"
+            accept="image/jpeg,image/png,image/webp"
+            files={photos}
+            maxCount={photoMax}
+            minCount={photoMin}
+            onChange={(next) => {
+              setPhotos(next)
+              setError(null)
+            }}
+          />
 
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-rose-900">
-              短视频（可选，0～{videoMax} 段）
-            </span>
-            <input
-              type="file"
-              accept="video/mp4,video/quicktime"
-              multiple
-              onChange={handleVideoChange}
-              className="block w-full text-sm text-rose-900 file:mr-4 file:rounded-full file:border-0 file:bg-rose-100 file:px-4 file:py-2 file:text-sm file:font-medium file:text-rose-800 hover:file:bg-rose-200"
-            />
-            {videos.length > 0 && (
-              <p className="text-sm text-rose-700">已选 {videos.length} 段视频</p>
-            )}
-          </label>
+          <MediaUploadField
+            kind="video"
+            label={`短视频（可选，0～${videoMaxClips} 段）`}
+            hint="支持 MP4、MOV，每段最长约 5 秒入片"
+            accept="video/mp4,video/quicktime"
+            files={videos}
+            maxCount={videoMaxClips}
+            onChange={(next) => {
+              setVideos(next)
+              setError(null)
+            }}
+          />
 
           {photos.length > 0 && (
             <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">
@@ -186,16 +171,10 @@ export default function CreateBabyMoonPage() {
             />
           </label>
 
-          <label className="block space-y-2">
+          <div className="space-y-2">
             <span className="text-sm font-medium text-rose-900">满月日期 *</span>
-            <input
-              required
-              type="date"
-              value={eventDate}
-              onChange={(e) => setEventDate(e.target.value)}
-              className="w-full rounded-xl border border-rose-200 px-4 py-3 text-rose-950 outline-none ring-rose-300 focus:ring-2"
-            />
-          </label>
+            <DatePickerField value={eventDate} onChange={setEventDate} />
+          </div>
 
           <label className="block space-y-2">
             <span className="text-sm font-medium text-rose-900">祝福语</span>
@@ -207,6 +186,9 @@ export default function CreateBabyMoonPage() {
               rows={2}
               className="w-full rounded-xl border border-rose-200 px-4 py-3 text-rose-950 outline-none ring-rose-300 focus:ring-2"
             />
+            <p className="text-right text-xs text-rose-600/70">
+              {blessing.length}/50
+            </p>
           </label>
         </section>
 
